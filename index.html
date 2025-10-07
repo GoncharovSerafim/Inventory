@@ -859,24 +859,37 @@
     // 📋 История операций
     function showTransactions() {
         const list = document.getElementById('transactionsList');
-
+    
         if (transactions.length === 0) {
             list.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">История операций пуста</div>';
         } else {
-            list.innerHTML = transactions.slice().reverse().map(trans => `
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
-                    <strong>👤 ${trans.userName}</strong><br>
-                    <small>📅 ${new Date(trans.date).toLocaleString('ru-RU')}</small><br>
-                    <div style="margin-top: 8px;">
-                        ${trans.items.map(item => `• ${item.name} (${item.quantity} шт)`).join('<br>')}
+            // Сортируем по дате (новые сверху)
+            const sortedTransactions = transactions.slice().sort((a, b) => {
+                const dateA = a.date ? new Date(a.date) : new Date(a.createdAt?.toDate());
+                const dateB = b.date ? new Date(b.date) : new Date(b.createdAt?.toDate());
+                return dateB - dateA;
+            });
+    
+            list.innerHTML = sortedTransactions.map(trans => {
+                const transactionDate = trans.date ? 
+                    new Date(trans.date).toLocaleString('ru-RU') : 
+                    (trans.createdAt ? new Date(trans.createdAt.toDate()).toLocaleString('ru-RU') : 'Дата неизвестна');
+                
+                return `
+                    <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                        <strong>👤 ${trans.userName || 'Неизвестный пользователь'}</strong><br>
+                        <small>📅 ${transactionDate}</small><br>
+                        <div style="margin-top: 8px;">
+                            ${trans.items ? trans.items.map(item => `• ${item.name} (${item.quantity} шт)`).join('<br>') : 'Нет данных'}
+                        </div>
+                        <div style="margin-top: 8px; font-weight: bold;">
+                            Всего: ${trans.totalItems || 0} шт
+                        </div>
                     </div>
-                    <div style="margin-top: 8px; font-weight: bold;">
-                        Всего: ${trans.totalItems} шт
-                    </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
-
+    
         document.getElementById('transactionsModal').style.display = 'flex';
     }
 
@@ -885,11 +898,14 @@
             try {
                 // Удаляем все транзакции из Firebase
                 const snapshot = await db.collection("transactions").get();
-                const batch = db.batch();
+                
+                // Удаляем каждый документ по отдельности
+                const deletePromises = [];
                 snapshot.forEach(doc => {
-                    batch.delete(doc.ref);
+                    deletePromises.push(db.collection("transactions").doc(doc.id).delete());
                 });
-                await batch.commit();
+            
+                await Promise.all(deletePromises);
                 alert('История операций очищена');
             } catch (error) {
                 alert('Ошибка при очистке истории: ' + error.message);
@@ -926,4 +942,5 @@
     window.onload = init;
 </script>
 </body>
+
 </html>
