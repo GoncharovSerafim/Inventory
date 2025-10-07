@@ -40,6 +40,7 @@
         }
 
         .controls {
+            <button class="btn btn-danger" onclick="debugFirebaseData()">🐛 Отладка</button>
             background: #34495e;
             padding: 20px;
             display: flex;
@@ -488,26 +489,36 @@
         </div>
     </div>
 </div>
+<!-- Модальное окно синхронизации -->
+<div class="modal" id="syncModal">
+    <div class="modal-content">
+        <h3>🔄 Синхронизация данных</h3>
+        <div style="margin: 20px 0;">
+            <p><strong>Общая ссылка для команды:</strong></p>
+            <input type="text" id="shareableLink"
+                   style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;"
+                   readonly>
+            <button onclick="copyShareLink()" class="btn btn-primary" style="width: 100%; margin-bottom: 20px;">📋
+                Копировать ссылку
+            </button>
 
+            <div style="margin-top: 20px;">
+                <p><strong>Импорт/экспорт данных:</strong></p>
+                <button onclick="exportData()" class="btn btn-success" style="width: 100%; margin: 5px 0;">📤 Экспорт
+                    данных
+                </button>
+                <button onclick="importSharedData()" class="btn btn-primary" style="width: 100%; margin: 5px 0;">📥
+                    Импорт данных
+                </button>
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="hideSyncModal()" style="width: 100%;">Закрыть</button>
+    </div>
+</div>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
-
 <script>
-    // 🔥 ЗАМЕНИТЕ ЭТИ ДАННЫЕ НА ВАШИ С FIREBASE CONSOLE
-    const firebaseConfig = {
-        apiKey: "AIzaSyBcFsu6uilMY_uxDMtbFJuoOc5_Bit3wQw",
-        authDomain: "inventory-system-1a5b7.firebaseapp.com",
-        projectId: "inventory-system-1a5b7",
-        storageBucket: "inventory-system-1a5b7.firebasestorage.app",
-        messagingSenderId: "674916814129",
-        appId: "1:674916814129:web:df3973a98d2db2fd617410"
-    };
-
-    // Инициализация Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
     // 📊 Данные
     let inventory = [];
     let cart = [];
@@ -515,24 +526,76 @@
 
     // 🚀 Инициализация
     async function init() {
-        setupFirebaseListeners();
-        updateShareableLink();
+        console.log('🚀 Инициализация приложения...');
+
+        // Показываем сообщение о загрузке
+        document.getElementById('inventoryGrid').innerHTML =
+            '<div class="loading">🔄 Загрузка инвентаря...</div>';
+
+        // Ждем немного перед загрузкой Firebase
+        setTimeout(() => {
+            loadFirebase();
+        }, 100);
 
         document.getElementById('searchInput').addEventListener('input', function(e) {
             const searchTerm = e.target.value.toLowerCase();
             const filtered = inventory.filter(item =>
-                item.name.toLowerCase().includes(searchTerm) ||
-                (item.description && item.description.toLowerCase().includes(searchTerm)) ||
-                (item.category && item.category.toLowerCase().includes(searchTerm))
+                item.name && item.name.toLowerCase().includes(searchTerm)
             );
             displayInventory(filtered);
         });
     }
 
+    // 🔥 Загрузка Firebase
+    async function loadFirebase() {
+        try {
+            // Динамически загружаем Firebase
+            await loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
+            await loadScript('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+
+            // 🔥 Ваши данные Firebase
+            const firebaseConfig = {
+                apiKey: "AIzaSyBcFsu6uilMY_uxDMtbFJuoOc5_Bit3wQw",
+                authDomain: "inventory-system-1a5b7.firebaseapp.com",
+                projectId: "inventory-system-1a5b7",
+                storageBucket: "inventory-system-1a5b7.firebasestorage.app",
+                messagingSenderId: "674916814129",
+                appId: "1:674916814129:web:df3973a98d2db2fd617410"
+            };
+
+            // Инициализация Firebase
+            firebase.initializeApp(firebaseConfig);
+            const db = firebase.firestore();
+
+            console.log('✅ Firebase загружен');
+            setupFirebaseListeners(db);
+
+        } catch (error) {
+            console.error('❌ Ошибка загрузки Firebase:', error);
+            document.getElementById('inventoryGrid').innerHTML =
+                '<div class="loading">⚠️ Используется локальный режим</div>';
+            loadDemoData();
+        }
+    }
+
+    // 📜 Загрузка скрипта
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
     // 🔥 Настройка слушателей Firebase
-    function setupFirebaseListeners() {
+    function setupFirebaseListeners(db) {
+        console.log('📡 Настройка слушателей Firebase...');
+
         // Слушаем изменения в инвентаре
         db.collection("inventory").onSnapshot((snapshot) => {
+            console.log('📦 Получены данные инвентаря:', snapshot.size, 'документов');
             inventory = [];
             snapshot.forEach((doc) => {
                 inventory.push({
@@ -540,18 +603,22 @@
                     ...doc.data()
                 });
             });
-            console.log('Инвентарь обновлен из Firebase:', inventory);
             displayInventory();
             updateSyncStatus('✅ Синхронизировано');
+
+            document.getElementById('connectionStatus').className = 'connection-status connected';
+            document.getElementById('connectionStatus').textContent = '🚀 Подключено к Firebase';
+
         }, (error) => {
-            console.error('Ошибка Firebase:', error);
-            updateSyncStatus('❌ Ошибка синхронизации');
+            console.error('❌ Ошибка Firebase:', error);
             document.getElementById('connectionStatus').className = 'connection-status disconnected';
-            document.getElementById('connectionStatus').textContent = '❌ Отключено от Firebase';
+            document.getElementById('connectionStatus').textContent = '❌ Ошибка Firebase';
+            loadDemoData();
         });
 
         // Слушаем изменения в транзакциях
         db.collection("transactions").onSnapshot((snapshot) => {
+            console.log('📋 Получены транзакции:', snapshot.size, 'документов');
             transactions = [];
             snapshot.forEach((doc) => {
                 transactions.push({
@@ -559,78 +626,306 @@
                     ...doc.data()
                 });
             });
-            console.log('Транзакции обновлены из Firebase');
         });
     }
 
-    // 💾 Сохранение товара в Firebase
-    async function saveItemToFirebase(item) {
+    // 📋 Демо-данные на случай ошибки
+    function loadDemoData() {
+        console.log('📝 Загрузка демо-данных...');
+        inventory = [
+            {
+                id: '1',
+                name: "Ноутбук Dell",
+                description: "Ноутбук для сотрудников",
+                quantity: 5,
+                min_quantity: 2,
+                category: "Техника"
+            },
+            {
+                id: '2',
+                name: "Компьютерная мышь",
+                description: "Беспроводная мышь Logitech",
+                quantity: 15,
+                min_quantity: 5,
+                category: "Аксессуары"
+            },
+            {
+                id: '3',
+                name: "Монитор 24\"",
+                description: "Монитор Samsung",
+                quantity: 3,
+                min_quantity: 1,
+                category: "Техника"
+            }
+        ];
+        displayInventory();
+        updateSyncStatus('⚠️ Локальный режим');
+    }
+        // ➕ Добавление нового товара
+    async function addNewItem(event) {
+        event.preventDefault();
+
+        const newItem = {
+            name: document.getElementById('newItemName').value,
+            description: document.getElementById('newItemDescription').value,
+            quantity: parseInt(document.getElementById('newItemQuantity').value),
+            min_quantity: parseInt(document.getElementById('newItemMinQuantity').value),
+            category: document.getElementById('newItemCategory').value
+        };
+
         try {
-            if (item.firebaseId) {
-                // Обновление существующего товара
-                await db.collection("inventory").doc(item.firebaseId).update({
-                    name: item.name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    min_quantity: item.min_quantity,
-                    category: item.category,
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } else {
-                // Добавление нового товара
-                const docRef = await db.collection("inventory").add({
-                    name: item.name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    min_quantity: item.min_quantity,
-                    category: item.category,
+            // Проверяем, доступен ли Firebase
+            if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+                const db = firebase.firestore();
+                await db.collection("inventory").add({
+                    ...newItem,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                return docRef.id;
+                alert('✅ Товар добавлен в Firebase');
+            } else {
+                // Локальное сохранение
+                newItem.id = 'local_' + Date.now();
+                inventory.push(newItem);
+                displayInventory();
+                alert('✅ Товар добавлен локально');
             }
-            return true;
+
+            hideAddItemModal();
+
+            // Очистка формы
+            document.getElementById('newItemName').value = '';
+            document.getElementById('newItemDescription').value = '';
+            document.getElementById('newItemQuantity').value = '';
+
         } catch (error) {
-            console.error('Ошибка сохранения в Firebase:', error);
-            throw error;
+            alert('Ошибка при добавлении товара: ' + error.message);
         }
     }
 
-    // 🗑️ Удаление товара из Firebase
-    async function deleteItemFromFirebase(itemId) {
+    // 🗑️ Удаление товара
+    async function deleteItem(itemId) {
+        if (confirm('Удалить этот товар?')) {
+            try {
+                // Проверяем, доступен ли Firebase
+                if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+                    const db = firebase.firestore();
+                    await db.collection("inventory").doc(itemId).delete();
+                    alert('✅ Товар удален из Firebase');
+                } else {
+                    // Локальное удаление
+                    inventory = inventory.filter(item => item.id !== itemId);
+                    displayInventory();
+                    alert('✅ Товар удален локально');
+                }
+            } catch (error) {
+                alert('Ошибка при удалении товара: ' + error.message);
+            }
+        }
+    }
+
+    // ✅ Подтверждение выдачи
+    async function completeTransaction() {
+        const userName = document.getElementById('userName').value.trim();
+
+        if (!userName) {
+            alert('Пожалуйста, введите ваше имя');
+            return;
+        }
+
+        if (cart.length === 0) {
+            alert('Корзина пуста');
+            return;
+        }
+
         try {
-            await db.collection("inventory").doc(itemId).delete();
-            return true;
+            const transaction = {
+                userName: userName,
+                items: cart.map(item => ({
+                    id: item.id,
+                    name: item.name,
+                    quantity: item.cartQuantity
+                })),
+                totalItems: cart.reduce((sum, item) => sum + item.cartQuantity, 0),
+                date: new Date().toISOString()
+            };
+
+            // Проверяем, доступен ли Firebase
+            if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+                const db = firebase.firestore();
+
+                // Сохраняем транзакцию
+                await db.collection("transactions").add({
+                    ...transaction,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Обновляем количество в инвентаре
+                for (const cartItem of cart) {
+                    const inventoryItem = inventory.find(item => item.id === cartItem.id);
+                    if (inventoryItem) {
+                        const newQuantity = inventoryItem.quantity - cartItem.cartQuantity;
+                        await db.collection("inventory").doc(cartItem.id).update({
+                            quantity: newQuantity
+                        });
+                    }
+                }
+
+                alert('✅ Выдача оформлена в Firebase');
+            } else {
+                // Локальное сохранение
+                transaction.id = 'local_' + Date.now();
+                transactions.push(transaction);
+
+                // Обновляем количество локально
+                cart.forEach(cartItem => {
+                    const inventoryItem = inventory.find(item => item.id === cartItem.id);
+                    if (inventoryItem) {
+                        inventoryItem.quantity -= cartItem.cartQuantity;
+                    }
+                });
+
+                displayInventory();
+                alert('✅ Выдача оформлена локально');
+            }
+
+            alert(`✅ Выдача успешно оформлена для ${userName}\n\nВыдано товаров: ${transaction.totalItems}\nПозиций: ${cart.length}`);
+
+            cart = [];
+            updateCartDisplay();
+            document.getElementById('userName').value = '';
+
         } catch (error) {
-            console.error('Ошибка удаления из Firebase:', error);
-            throw error;
+            alert('Ошибка при оформлении выдачи: ' + error.message);
         }
     }
 
-    // 📝 Добавление транзакции в Firebase
-    async function addTransactionToFirebase(transaction) {
-        try {
-            await db.collection("transactions").add({
-                userName: transaction.userName,
-                items: transaction.items,
-                totalItems: transaction.totalItems,
-                date: new Date().toISOString(),
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            return true;
-        } catch (error) {
-            console.error('Ошибка сохранения транзакции:', error);
-            throw error;
-        }
+    // 📤 Экспорт данных
+    function exportData() {
+        const data = {
+            inventory: inventory,
+            transactions: transactions,
+            exportDate: new Date().toLocaleString('ru-RU')
+        };
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `inventory_backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        alert('📤 Данные экспортированы в файл');
     }
 
+    // 🔗 Общая ссылка
+    function updateShareableLink() {
+        const currentUrl = window.location.href;
+        document.getElementById('shareableLink').value = currentUrl;
+    }
+
+    function copyShareLink() {
+        const linkInput = document.getElementById('shareableLink');
+        linkInput.select();
+        document.execCommand('copy');
+        alert('Ссылка скопирована! Отправьте её команде.');
+    }
+
+    // 📥 Импорт данных
+    function importSharedData() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (confirm('Заменить текущие данные импортированными?')) {
+                        inventory = data.inventory || [];
+                        transactions = data.transactions || [];
+                        displayInventory();
+                        alert('Данные успешно импортированы!');
+                    }
+                } catch (error) {
+                    alert('Ошибка при импорте файла');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    // 🔄 Синхронизация
+    function showSyncModal() {
+        // Создаем модальное окно синхронизации
+        const syncModal = document.getElementById('syncModal');
+        if (!syncModal) {
+            // Создаем модальное окно, если его нет
+            const modalHTML = `
+                <div class="modal" id="syncModal">
+                    <div class="modal-content">
+                        <h3>🔄 Синхронизация данных</h3>
+                        <div style="margin: 20px 0;">
+                            <p><strong>Общая ссылка для команды:</strong></p>
+                            <input type="text" id="shareableLink" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;" readonly>
+                            <button onclick="copyShareLink()" class="btn btn-primary" style="width: 100%; margin-bottom: 20px;">📋 Копировать ссылку</button>
+
+                            <div style="margin-top: 20px;">
+                                <p><strong>Импорт/экспорт данных:</strong></p>
+                                <button onclick="exportData()" class="btn btn-success" style="width: 100%; margin: 5px 0;">📤 Экспорт данных</button>
+                                <button onclick="importSharedData()" class="btn btn-primary" style="width: 100%; margin: 5px 0;">📥 Импорт данных</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="hideSyncModal()" style="width: 100%;">Закрыть</button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+
+        updateShareableLink();
+        document.getElementById('syncModal').style.display = 'flex';
+    }
+
+    function hideSyncModal() {
+        document.getElementById('syncModal').style.display = 'none';
+    }
+
+    // 🗑️ Очистка истории операций
+    async function clearTransactions() {
+        if (confirm('Очистить всю историю операций?')) {
+            try {
+                if (typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+                    const db = firebase.firestore();
+                    const snapshot = await db.collection("transactions").get();
+
+                    // Удаляем каждый документ по отдельности
+                    const deletePromises = [];
+                    snapshot.forEach(doc => {
+                        deletePromises.push(db.collection("transactions").doc(doc.id).delete());
+                    });
+
+                    await Promise.all(deletePromises);
+                    alert('История операций очищена в Firebase');
+                } else {
+                    transactions = [];
+                    alert('История операций очищена локально');
+                }
+            } catch (error) {
+                alert('Ошибка при очистке истории: ' + error.message);
+            }
+        }
+    }
     // 🎯 Отображение инвентаря
     function displayInventory(filteredItems = null) {
         const grid = document.getElementById('inventoryGrid');
         const itemsToShow = filteredItems || inventory;
 
         if (itemsToShow.length === 0) {
-            grid.innerHTML = '<div class="loading">Товары не найдены</div>';
+            grid.innerHTML = '<div class="loading">📦 Товары не найдены</div>';
             return;
         }
 
@@ -642,7 +937,6 @@
                 <div class="item-name">${item.name}</div>
                 <div class="item-quantity">В наличии: <strong>${item.quantity}</strong></div>
                 ${item.description ? `<div class="item-description">${item.description}</div>` : ''}
-                <div style="font-size:12px; color:#999; margin-bottom:10px;">ID: ${item.id}</div>
                 <div class="quantity-controls">
                     <input type="number" class="quantity-input" id="qty-${item.id}" value="1" min="1" max="${item.quantity}">
                     <button class="take-btn" onclick="addToCart('${item.id}')">
@@ -670,6 +964,11 @@
     // 🛒 Добавление в корзину
     function addToCart(itemId) {
         const item = inventory.find(i => i.id === itemId);
+        if (!item) {
+            alert('Товар не найден');
+            return;
+        }
+
         const quantityInput = document.getElementById(`qty-${itemId}`);
         const quantity = parseInt(quantityInput.value);
 
@@ -730,95 +1029,6 @@
         updateCartDisplay();
     }
 
-    // ✅ Подтверждение выдачи
-    async function completeTransaction() {
-        const userName = document.getElementById('userName').value.trim();
-
-        if (!userName) {
-            alert('Пожалуйста, введите ваше имя');
-            return;
-        }
-
-        if (cart.length === 0) {
-            alert('Корзина пуста');
-            return;
-        }
-
-        try {
-            // Сохраняем транзакцию
-            const transaction = {
-                userName: userName,
-                items: cart.map(item => ({
-                    id: item.id,
-                    name: item.name,
-                    quantity: item.cartQuantity
-                })),
-                totalItems: cart.reduce((sum, item) => sum + item.cartQuantity, 0)
-            };
-
-            await addTransactionToFirebase(transaction);
-
-            // Обновляем количество в инвентаре
-            for (const cartItem of cart) {
-                const inventoryItem = inventory.find(item => item.id === cartItem.id);
-                if (inventoryItem) {
-                    const newQuantity = inventoryItem.quantity - cartItem.cartQuantity;
-                    await db.collection("inventory").doc(cartItem.id).update({
-                        quantity: newQuantity
-                    });
-                }
-            }
-
-            alert(`✅ Выдача успешно оформлена для ${userName}\n\nВыдано товаров: ${transaction.totalItems}\nПозиций: ${cart.length}`);
-
-            cart = [];
-            updateCartDisplay();
-            document.getElementById('userName').value = '';
-
-        } catch (error) {
-            alert('Ошибка при оформлении выдачи: ' + error.message);
-        }
-    }
-
-    // ➕ Добавление нового товара
-    async function addNewItem(event) {
-        event.preventDefault();
-
-        const newItem = {
-            name: document.getElementById('newItemName').value,
-            description: document.getElementById('newItemDescription').value,
-            quantity: parseInt(document.getElementById('newItemQuantity').value),
-            min_quantity: parseInt(document.getElementById('newItemMinQuantity').value),
-            category: document.getElementById('newItemCategory').value
-        };
-
-        try {
-            await saveItemToFirebase(newItem);
-            hideAddItemModal();
-
-            // Очистка формы
-            document.getElementById('newItemName').value = '';
-            document.getElementById('newItemDescription').value = '';
-            document.getElementById('newItemQuantity').value = '';
-
-        } catch (error) {
-            alert('Ошибка при добавлении товара: ' + error.message);
-        }
-    }
-
-    // 🗑️ Удаление товара
-    async function deleteItem(itemId) {
-        if (confirm('Удалить этот товар?')) {
-            try {
-                await deleteItemFromFirebase(itemId);
-            // Данные автоматически обновятся через слушатель
-            alert('Товар удален');
-            } catch (error) {
-                alert('Ошибка при удалении товара: ' + error.message);
-            }
-        }
-    }
-
     // 🔄 Статус синхронизации
     function updateSyncStatus(status) {
         document.getElementById('syncStatus').textContent = status;
@@ -826,92 +1036,29 @@
             `Последнее обновление: ${new Date().toLocaleTimeString()}`;
     }
 
-    // 🔗 Общая ссылка
-    function updateShareableLink() {
-        const currentUrl = window.location.href;
-        document.getElementById('shareableLink').value = currentUrl;
-    }
-
-    function copyShareLink() {
-        const linkInput = document.getElementById('shareableLink');
-        linkInput.select();
-        document.execCommand('copy');
-        alert('Ссылка скопирована! Отправьте её команде.');
-    }
-
-    // 📤 Экспорт данных
-    function exportData() {
-        const data = {
-            inventory: inventory,
-            transactions: transactions,
-            exportDate: new Date().toLocaleString('ru-RU')
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `inventory_backup_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
     // 📋 История операций
     function showTransactions() {
-    const list = document.getElementById('transactionsList');
+        const list = document.getElementById('transactionsList');
 
-    if (transactions.length === 0) {
-        list.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">История операций пуста</div>';
-    } else {
-        // Сортируем по дате (новые сверху)
-        const sortedTransactions = transactions.slice().sort((a, b) => {
-            const dateA = a.date ? new Date(a.date) : new Date(a.createdAt?.toDate());
-            const dateB = b.date ? new Date(b.date) : new Date(b.createdAt?.toDate());
-            return dateB - dateA;
-        });
-
-        list.innerHTML = sortedTransactions.map(trans => {
-            const transactionDate = trans.date ?
-                new Date(trans.date).toLocaleString('ru-RU') :
-                (trans.createdAt ? new Date(trans.createdAt.toDate()).toLocaleString('ru-RU') : 'Дата неизвестна');
-
-            return `
+        if (!transactions || transactions.length === 0) {
+            list.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">История операций пуста</div>';
+        } else {
+            list.innerHTML = transactions.slice().reverse().map(trans => `
                 <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
-                    <strong>👤 ${trans.userName || 'Неизвестный пользователь'}</strong><br>
-                    <small>📅 ${transactionDate}</small><br>
+                    <strong>👤 ${trans.userName}</strong><br>
+                    <small>📅 ${new Date(trans.date).toLocaleString('ru-RU')}</small><br>
                     <div style="margin-top: 8px;">
-                        ${trans.items ? trans.items.map(item => `• ${item.name} (${item.quantity} шт)`).join('<br>') : 'Нет данных'}
+                        ${trans.items.map(item => `• ${item.name} (${item.quantity} шт)`).join('<br>')}
                     </div>
                     <div style="margin-top: 8px; font-weight: bold;">
-                        Всего: ${trans.totalItems || 0} шт
+                        Всего: ${trans.totalItems} шт
                     </div>
                 </div>
-            `;
-        }).join('');
-    }
-
-    document.getElementById('transactionsModal').style.display = 'flex';
-}
-
-    async function clearTransactions() {
-    if (confirm('Очистить всю историю операций?')) {
-        try {
-            // Удаляем все транзакции из Firebase
-            const snapshot = await db.collection("transactions").get();
-
-            // Удаляем каждый документ по отдельности
-            const deletePromises = [];
-            snapshot.forEach(doc => {
-                deletePromises.push(db.collection("transactions").doc(doc.id).delete());
-            });
-
-            await Promise.all(deletePromises);
-            alert('История операций очищена');
-        } catch (error) {
-            alert('Ошибка при очистке истории: ' + error.message);
+            `).join('');
         }
+
+        document.getElementById('transactionsModal').style.display = 'flex';
     }
-}
 
     // 🪟 Управление модальными окнами
     function showAddItemModal() {
@@ -920,18 +1067,6 @@
 
     function hideAddItemModal() {
         document.getElementById('addItemModal').style.display = 'none';
-    }
-
-    function showSyncModal() {
-        document.getElementById('syncModal').style.display = 'flex';
-    }
-
-    function hideSyncModal() {
-        document.getElementById('syncModal').style.display = 'none';
-    }
-
-    function showTransactions() {
-        document.getElementById('transactionsModal').style.display = 'flex';
     }
 
     function hideTransactions() {
